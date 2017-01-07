@@ -1,0 +1,7 @@
+site_name: Shane C Mason
+pages:
+  - Home: index.md
+  - Discussions:
+    - Python (De)Serializers Benchmarks: python_serializers.md
+
+theme: simplex
