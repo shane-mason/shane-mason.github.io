@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        
+        <link rel="shortcut icon" href="../img/favicon.ico">
+
+	<title>Python (De)Serializers Benchmarks - Shane C Mason</title>
+
+        <link href="../css/bootstrap-custom.min.css" rel="stylesheet">
+        <link href="../css/font-awesome-4.0.3.css" rel="stylesheet">
+        <link rel="stylesheet" href="../css/highlight.css">
+        <link href="../css/base.css" rel="stylesheet">
+
+        <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+        <!--[if lt IE 9]>
+            <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+            <script src="https://oss.maxcdn.com/libs/respond.js/1.3.0/respond.min.js"></script>
+        <![endif]-->
+
+        
+    </head>
+
+    <body>
+
+        <div class="navbar navbar-default navbar-fixed-top" role="navigation">
+    <div class="container">
+
+        <!-- Collapsed navigation -->
+        <div class="navbar-header">
+            <!-- Expander button -->
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+
+            <!-- Main title -->
+            <a class="navbar-brand" href="..">Shane C Mason</a>
+        </div>
+
+        <!-- Expanded navigation -->
+        <div class="navbar-collapse collapse">
+            <!-- Main navigation -->
+            <ul class="nav navbar-nav">
+            
+            
+                <li >
+                    <a href="..">Home</a>
+                </li>
+            
+            
+            
+                <li class="dropdown active">
+                    <a href="#" class="dropdown-toggle" data-toggle="dropdown">Discussions <b class="caret"></b></a>
+                    <ul class="dropdown-menu">
+                    
+                        
+<li class="active">
+    <a href="./">Python (De)Serializers Benchmarks</a>
+</li>
+
+                    
+                    </ul>
+                </li>
+            
+            
+            </ul>
+
+            <!-- Search, Navigation and Repo links -->
+            <ul class="nav navbar-nav navbar-right">
+                <li>
+                    <a href="#" data-toggle="modal" data-target="#mkdocs_search_modal">
+                        <i class="fa fa-search"></i> Search
+                    </a>
+                </li>
+                <li >
+                    <a rel="next" href="..">
+                        <i class="fa fa-arrow-left"></i> Previous
+                    </a>
+                </li>
+                <li class="disabled">
+                    <a rel="prev" >
+                        Next <i class="fa fa-arrow-right"></i>
+                    </a>
+                </li>
+                
+            </ul>
+        </div>
+    </div>
+</div>
+
+        <div class="container">
+            <div class="col-md-3"><div class="bs-sidebar hidden-print affix well" role="complementary">
+    <ul class="nav bs-sidenav">
+    
+        <li class="main active"><a href="#what-is-serialization-and-deserialization">What is serialization and deserialization</a></li>
+        
+    
+        <li class="main "><a href="#python-deserialization">Python (De)Serialization</a></li>
+        
+    
+        <li class="main "><a href="#the-tests">The Tests</a></li>
+        
+    
+        <li class="main "><a href="#the-results">The Results</a></li>
+        
+    
+        <li class="main "><a href="#what-does-this-mean">What does this mean?</a></li>
+        
+    
+        <li class="main "><a href="#for-the-essentialdb-use-case">For the EssentialDB Use Case</a></li>
+        
+    
+        <li class="main "><a href="#comments">Comments</a></li>
+        
+    
+    </ul>
+</div></div>
+            <div class="col-md-9" role="main">
+
+<p>2017-01-06</p>
+<p>After measuring <a href="http://essentialdb.readthedocs.io/en/latest/performance.html">EssentialDB's performance</a>, I did some basic profiling and it became very clear that serializing and deserializing objects to disk was the biggest bottleneck and most likely the best opportunity for quick performance boosts. Initial <a href="https://www.google.com/search?client=opera&amp;q=fastest+python+serialization&amp;sourceid=opera&amp;ie=UTF-8&amp;oe=UTF-8">research</a> suggested that <a href="http://www.benfrederickson.com/dont-pickle-your-data/">swapping out pickle</a> for a json based library would provide instant performance gains. I was excited - I might cut my write times by <a href="https://blog.hartleybrody.com/python-serialize/">orders of magnitude</a> with a one line code change! But early experiments simply didn't back <a href="https://gist.github.com/cactus/4073643">these claims</a>. Rather than gaining by orders of magnitude, things got slower. I decided to run some benchmarks of my own and this is what I found.</p>
+<h3 id="what-is-serialization-and-deserialization">What is serialization and deserialization</h3>
+<p>Basically, you have an object and you want to be able to send across the network or persist it to disk in its current state. To do that, you have to <em>serialize</em> the object into a character or byte stream. On the other side, you will need to <em>deserialize</em> the character or byte stream into an object with the same state.</p>
+<h3 id="python-deserialization">Python (De)Serialization</h3>
+<p>There are several popular modules available using several different techniques for (de)serialization in Python. For this document, we tested the following:</p>
+<ul>
+<li><a href="https://docs.python.org/3/library/pickle.html">pickle</a> - This is the standard for serializing Python objects to disk. Pickle format is <em>not portable</em> since it can only be read by Python programs.</li>
+<li><a href="https://docs.python.org/3/library/marshal.html">Marshal</a> - This is an internal Python module used for the generation of code objects. The documentation warns strongly against using this for general persistence since it does not ensure compatibility between Python versions. Marshal files are <em>not portable</em> since they can only be read by Python programs.</li>
+<li><a href="https://docs.python.org/3/library/json.html">json</a> - The standard python module for serializing Python objects to and from JavaScript Object Notation (JSON) representation. Most programming languages can read JSON.</li>
+<li><a href="https://pypi.python.org/pypi/simplejson">simplejson</a> - Alternate module for python serialization. Most programming languages can read JSON.</li>
+<li><a href="https://pypi.python.org/pypi/ujson">ujson</a> - Alternate module for python serialization backed with a compiled C library. While very fast, the compiled portion makes it difficult to install on some platforms. Most programming languages can read JSON.</li>
+<li><a href="https://pypi.python.org/pypi/msgpack-python/">msgpack</a> - Python module for serializing Python objects to and from the very compact <a href="http://msgpack.org/index.html">MessagePack</a> binary serialization format. This module is backed by a C library for speed. Most programming languages can read MessagePack.</li>
+<li><a href="https://pypi.python.org/pypi/u-msgpack-python">umsgpack</a> - Pure python implementation of the MessagePack format.</li>
+</ul>
+<p>There are plenty of other formats and modules that I didn't include in these tests for a variety of reasons. For example, tests using <a href="https://pypi.python.org/pypi/PyYAML/3.12">YAML</a> took so long that my console kept timing out while waiting on them to complete.</p>
+<h3 id="the-tests">The Tests</h3>
+<p>I used EssentialDB's fake <a href="https://github.com/shane-mason/essentialdb/blob/master/tests/document_generator.py">document generator</a> to generate objects with the following template:</p>
+<pre><code>template = {
+    "f0": "integer",    #A positive integer
+    "f1": "short_int",  #An int between 0 and 100
+    "f2": "sentence",   #A string of 3 to 15 words
+    "f3": "email",      #An email address
+    "f4": "url",        #A website URL
+    "f5": "paragraph",  #A string of 3 to 15 sentences
+    "f6": "floating",   #A floating point number
+    "f7": ['one', 'two', 'three', 'four'] #One of the 4 choices
+}
+</code></pre>
+<ul>
+<li>Generate 100,000 objects (dictionaries)</li>
+<li>For each of the modules<ul>
+<li>Start the write timer</li>
+<li>For 1 to 10<ul>
+<li>serialize the objects to disk</li>
+</ul>
+</li>
+<li>Stop the write timer</li>
+<li>Start the read timer</li>
+<li>For 1 to 10<ul>
+<li>deserialize the objects from disk</li>
+</ul>
+</li>
+<li>Stop the read timer</li>
+</ul>
+</li>
+</ul>
+<p>You can find the <a href="https://gist.github.com/shane-mason/8bbe965fd7cd1b8ff94c098d4be63435">full source code here</a>.</p>
+<p>The tests were ran on an Amazon AWS t2.small running stock Ubuntu with Python 3.5.</p>
+<h3 id="the-results">The Results</h3>
+<p>The following figure show the average of 10 reads/writes of 100K objects with each (de)serializer. Read and writes are in seconds and size is in megabytes on disk of the serialized objects.</p>
+<p><img alt="Read and write times per 100 thousand objects" src="../img/serializer_read_write_times.png" title="Read/write per 100K Objects" /></p>
+<p><img alt="Round trip read plus write times per 100 thousand objects" src="../img/serializer_round_trip_times.png" title="Roundtrip per 100K Objects" /></p>
+<p>This table shows the raw results.</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Write</th>
+<th>Read</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pickle</td>
+<td>1.362</td>
+<td>0.321</td>
+<td>88.110</td>
+</tr>
+<tr>
+<td>marshal</td>
+<td>1.353</td>
+<td>1.480</td>
+<td>88.050</td>
+</tr>
+<tr>
+<td>json</td>
+<td>2.812</td>
+<td>0.555</td>
+<td>92.287</td>
+</tr>
+<tr>
+<td>simplejson</td>
+<td>3.166</td>
+<td>0.550</td>
+<td>92.287</td>
+</tr>
+<tr>
+<td>ujson</td>
+<td>1.463</td>
+<td>0.638</td>
+<td>91.127</td>
+</tr>
+<tr>
+<td>umsgpack</td>
+<td>3.940</td>
+<td>4.050</td>
+<td>86.048</td>
+</tr>
+<tr>
+<td>msgpack</td>
+<td>1.342</td>
+<td>0.388</td>
+<td>86.048</td>
+</tr>
+</tbody>
+</table>
+<h3 id="what-does-this-mean">What does this mean?</h3>
+<p>From the data above, we can see that pickle and msg-pack performed the best overall. In my initial research, I read several benchmarks claiming that JSON, particularly ujson, would provide enhanced performance over pickle - but that is not reflected in my test results at all. Why were my results different?</p>
+<p>Most of the existing bench marks out there appear to be based on Python2 and these tests were performed on Python3 - which is a very important distinction. Python has two implementations of the pickle module, refered to as cPickle (backed by a C library for speed) and Pickle (a pure Python implementation for portability). In Python2, pickle is loaded by default and required the programmer to use a construct like:</p>
+<pre><code>try:
+   import cPickle as pickle
+except:
+   import pickle
+</code></pre>
+<p>In Python3, cPickle was renamed to _pickle and is now automatically loaded when present. If not present, Python will automatically fall back to the pure python implementation. Additionally, Python version 3.0 introduced Protocol 3 and version 3.4 introduced Protocol 4 - both adding significant enhancements and performance boosts to the binary pickle formats.</p>
+<p>The end result of these improvements is that the old best practices for Python serialization don't hold up any more. This is how I will be making my choices:</p>
+<ul>
+<li>If speed, convenience and flexibility are the most important, choose pickle.<ul>
+<li>Fastest round trip in my test cases</li>
+<li>Python built-in, so <code>import pickle</code> just works</li>
+<li>Most Python object support it already, so they automatically (de)serialize</li>
+</ul>
+</li>
+<li>If speed and portability are the most important, choose msg-pack<ul>
+<li>Second fastest round trip in my tests cases</li>
+<li>Serial format has support in over 50 programming language</li>
+<li>But requires a C-Module, so you might need a compiler if you can't find a binary release for your platform</li>
+</ul>
+</li>
+<li>If speed and JSON format are the most important, use ujson<ul>
+<li>Third fastest round trip</li>
+<li>Outputs compliant JSON, which has become the de-facto exchange format</li>
+<li>But requires a C-Module, so you might need a compiler if you can't find a binary release for your platform</li>
+</ul>
+</li>
+<li>If convenience and JSON format are the most important factors, use the built-in json module.<ul>
+<li>Fourth fastest round trip time</li>
+<li>Outputs compliant JSON, which has become the de-facto exchange format</li>
+<li>Python built-in, so <code>import json</code> just works</li>
+</ul>
+</li>
+</ul>
+<h3 id="for-the-essentialdb-use-case">For the EssentialDB Use Case</h3>
+<p>EssentialDB doesn't support any partitioning or sharding currently (since it is generally meant to be used in memory) so the entire database is serialized and deserialized to disk at once - so speed (throughput) is the most important factor in many use cases. Many, but not all cases. Based on this, it makes sense that EssentialDB should support all of the serialization modules listed above. There are valid use cases to prefer any of the formats. Each of the module discussed here implement the same Python serialization interface:</p>
+<pre><code># read - fp is a file object
+data = serializer.load(fp)
+#write
+serializer.dump(fp, data)
+</code></pre>
+<p>By exploiting this, we can have pickle be the default serializer, but allow developers to specify alternate serializers.</p>
+<p>The <a href="https://docs.python.org/3/library/pickle.html">pickle documentation </a> has a great discussion on when the differences in the formats:</p>
+<ul>
+<li>JSON is a text serialization format (it outputs unicode text, although most of the time it is then encoded to utf-8), while pickle is a binary serialization format;</li>
+<li>JSON is human-readable, while pickle is not;</li>
+<li>JSON is interoperable and widely used outside of the Python ecosystem, while pickle is Python-specific;</li>
+<li>JSON, by default, can only represent a subset of the Python built-in types, and no custom classes; pickle can represent an extremely large number of Python types (many of them automatically, by clever usage of Python’s introspection facilities; complex cases can be tackled by implementing specific object APIs).</li>
+</ul>
+<h3 id="comments">Comments</h3>
+<p>This is generated with a static site generator, so we don't really have comments. If you want to discuss this article, <a href="https://github.com/shane-mason/shane-mason.github.io/issues/1">use this ticket on GitHub</a>.</p></div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+            
+            <center>Documentation built with <a href="http://www.mkdocs.org/">MkDocs</a>.</center>
+        </footer>
+
+        <script src="../js/jquery-1.10.2.min.js"></script>
+        <script src="../js/bootstrap-3.0.3.min.js"></script>
+        <script src="../js/highlight.pack.js"></script>
+        <script>var base_url = '..';</script>
+        <script data-main="../mkdocs/js/search.js" src="../mkdocs/js/require.js"></script>
+        <script src="../js/base.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="Search Modal" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                        <h4 class="modal-title" id="exampleModalLabel">Search</h4>
+                    </div>
+                    <div class="modal-body">
+                        <p>
+                            From here you can search these documents. Enter
+                            your search terms below.
+                        </p>
+                        <form role="form">
+                            <div class="form-group">
+                                <input type="text" class="form-control" placeholder="Search..." id="mkdocs-search-query">
+                            </div>
+                        </form>
+                        <div id="mkdocs-search-results"></div>
+                    </div>
+                    <div class="modal-footer">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>
